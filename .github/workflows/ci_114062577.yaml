@@ -10,6 +10,11 @@ permissions:
   contents: read
   checks: write
   pull-requests: write
+  actions: read  # 讀取 workflow 資訊
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci:
@@ -40,17 +45,48 @@ jobs:
 
       - name: Publish test results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Vitest Test Results
           path: reports/vitest-junit.xml
           reporter: java-junit
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fail-on-error: true
+          fail-on-empty: true
+
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ ! -f reports/vitest-junit.xml ]; then
+            echo "## Test Results" >> "$GITHUB_STEP_SUMMARY"
+            echo "No test report found." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          TESTS=$(grep -oP 'tests="\K[^"]+' reports/vitest-junit.xml | head -1)
+          FAILURES=$(grep -oP 'failures="\K[^"]+' reports/vitest-junit.xml | head -1)
+          ERRORS=$(grep -oP 'errors="\K[^"]+' reports/vitest-junit.xml | head -1)
+          SKIPPED=$(grep -oP 'skipped="\K[^"]+' reports/vitest-junit.xml | head -1)
+          SKIPPED=${SKIPPED:-0}
+          PASSED=$((TESTS - FAILURES - ERRORS - SKIPPED))
+
+          if [ "$FAILURES" -eq 0 ] && [ "$ERRORS" -eq 0 ]; then
+            STATUS="passed"
+          else
+            STATUS="failed"
+          fi
+
+          {
+            echo "## Test Results — $STATUS"
+            echo ""
+            echo "| Total | Passed | Failed | Errors | Skipped |"
+            echo "|:-----:|:------:|:------:|:------:|:-------:|"
+            echo "| $TESTS | $PASSED | $FAILURES | $ERRORS | $SKIPPED |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-report
-          path: reports/
+          path: reports/vitest-junit.xml
           if-no-files-found: warn
