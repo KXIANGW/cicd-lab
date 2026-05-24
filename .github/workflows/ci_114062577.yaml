@@ -10,7 +10,7 @@ permissions:
   contents: read
   checks: write
   pull-requests: write
-  actions: read  # 讀取 workflow 資訊
+  actions: read # 讀取 workflow 資訊
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
